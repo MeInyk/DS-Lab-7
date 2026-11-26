@@ -20,8 +20,17 @@ def load_data(red_path: str, white_path: str) -> pd.DataFrame:
 
     Note: Don't forget to add the 'type' characteristic
     """
-    # TODO: your code
-    data = None
+    red_data = pd.read_csv(red_path, sep=';')
+    white_data = pd.read_csv(white_path, sep=';')
+
+    if set(red_data.columns) != set(white_data.columns):
+        raise ValueError("Datasets have inconsistent columns")
+
+    red_data['type'] = 'red'
+    white_data['type'] = 'white'
+
+    data = pd.concat([red_data, white_data], ignore_index=True)
+    data = data.dropna()
 
     return data
 
@@ -30,7 +39,17 @@ def remove_outliers(df: pd.DataFrame, features: pd.Index) -> pd.DataFrame:
     """Removing outliers from the dataset using the IQR method."""
     df_clean = df.copy()
 
-    # TODO: your code
+    Q1 = df_clean[features.columns if isinstance(features, pd.DataFrame) else features].quantile(0.25)
+    Q3 = df_clean[Q1.index].quantile(0.75)
+    IQR = Q3 - Q1
+
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
+
+    df_clean = df_clean[
+        ~((df_clean[Q1.index] < lower_bound) |
+          (df_clean[Q1.index] > upper_bound)).any(axis=1)
+    ]
 
     return df_clean
 
@@ -40,9 +59,10 @@ def scale_features(
     X_test: pd.DataFrame
 ) -> tuple[np.ndarray, np.ndarray]:
     """Standardization of features."""
-    # TODO: your code
-    X_train_scaled = None
-    X_test_scaled = None
+    scaler = StandardScaler()
+
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
     return X_train_scaled, X_test_scaled
 
@@ -55,7 +75,8 @@ def encode_categorical_variables(data: pd.DataFrame) -> pd.DataFrame:
     """
     data_encoded = data.copy()
 
-    # TODO: your code
+    encoder = LabelEncoder()
+    data_encoded['type'] = encoder.fit_transform(data_encoded['type'])
 
     return data_encoded
 
@@ -63,10 +84,8 @@ def encode_categorical_variables(data: pd.DataFrame) -> pd.DataFrame:
 def prepare_regression_data(
         data: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     """Preparing data for the regression task."""
-    # TODO: your code
-
-    X = None
-    y = None
+    X = data.drop(['quality', 'type'], axis=1)
+    y = data['quality']
 
     return X, y
 
@@ -79,7 +98,18 @@ def build_regression_model(input_dim: int) -> keras.Model:
     """
     model = keras.Sequential()
 
-    # TODO: your code
+    model.add(keras.layers.Input(shape=(input_dim,)))
+    model.add(keras.layers.Dense(input_dim, activation='relu'))
+    model.add(keras.layers.Dense(64, activation='relu'))
+    model.add(keras.layers.Dense(32, activation='relu'))
+    model.add(keras.layers.Dense(16, activation='relu'))
+    model.add(keras.layers.Dense(1))
+
+    model.compile(
+        loss='mean_squared_error',
+        optimizer='adam',
+        metrics=['mse']
+    )
 
     return model
 
@@ -90,9 +120,14 @@ def train_regression_model(model: keras.Model,
                            epochs: int = 50,
                            batch_size: int = 32) -> keras.callbacks.History:
     """Training the neural network regressor."""
-    # TODO: your code
-
-    history = None
+    history = model.fit(
+        X_train,
+        y_train,
+        epochs=epochs,
+        batch_size=batch_size,
+        validation_split=0.2,
+        verbose=1
+    )
 
     return history
 
@@ -101,10 +136,13 @@ def evaluate_regression_model(
         model: keras.Model, X_test: pd.DataFrame,
         y_test: pd.Series) -> dict[str, float | np.ndarray]:
     """Evaluating the neural network regressor."""
-    # TODO: your code
+    y_pred = model.predict(X_test)
 
     # Model evaluation
-    results = {'MSE': 0.0, 'R2': 0.0}
+    results = {
+        'MSE': mean_squared_error(y_test, y_pred),
+        'R2': r2_score(y_test, y_pred)
+    }
 
     return results
 
@@ -117,11 +155,19 @@ def prepare_classification_data(
     Use keras.utils.to_categorical to convert labels
     into a one-hot encoded vector.
     """
-    # Categorization of quality ratings
-    # TODO: your code
+    data = data.copy()
 
-    X = None
-    y = None
+    # Categorization of quality ratings
+    data['quality_class'] = pd.cut(
+        data['quality'],
+        bins=[-1, 5, 7, 10],
+        labels=[0, 1, 2]
+    )
+
+    X = data.drop(['quality', 'quality_class'], axis=1)
+    y = keras.utils.to_categorical(
+        data['quality_class'], num_classes=3
+    )
 
     return X, y
 
@@ -135,7 +181,18 @@ def build_classification_model(input_dim: int,
     """
     model = keras.Sequential()
 
-    # TODO: your code
+    model.add(keras.layers.Input(shape=(input_dim,)))
+    model.add(keras.layers.Dense(input_dim, activation='relu'))
+    model.add(keras.layers.Dense(64, activation='relu'))
+    model.add(keras.layers.Dense(32, activation='relu'))
+    model.add(keras.layers.Dense(16, activation='relu'))
+    model.add(keras.layers.Dense(num_classes, activation='softmax'))
+
+    model.compile(
+        loss='categorical_crossentropy',
+        optimizer='adam',
+        metrics=['accuracy']
+    )
 
     return model
 
@@ -146,9 +203,14 @@ def train_classification_model(model,
                                epochs=50,
                                batch_size=32) -> keras.callbacks.History:
     """Training the neural network classifier."""
-    # TODO: your code
-
-    history = None
+    history = model.fit(
+        X_train,
+        y_train,
+        epochs=epochs,
+        batch_size=batch_size,
+        validation_split=0.2,
+        verbose=1
+    )
 
     return history
 
@@ -157,10 +219,21 @@ def evaluate_classification_model(
         model: keras.Model, X_test: pd.DataFrame,
         y_test: pd.Series) -> dict[str, float | str | dict]:
     """Evaluating the neural network classifier."""
-    # TODO: your code
+    y_pred = model.predict(X_test)
+
+    y_pred_classes = np.argmax(y_pred, axis=1)
+    y_true_classes = np.argmax(y_test, axis=1)
 
     # Model evaluation
-    results = {'report': "", 'accuracy': 0.0}
+    results = {
+        'report': classification_report(
+            y_true_classes, y_pred_classes,
+            zero_division=0
+        ),
+        'accuracy': accuracy_score(
+            y_true_classes, y_pred_classes
+        )
+    }
     return results
 
 
